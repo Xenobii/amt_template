@@ -1,11 +1,49 @@
 import os
 import h5py
 import numpy as np
+import torch
 from tqdm import tqdm
 from omegaconf import DictConfig
+from torch.utils.data import Dataset 
 from hydra.utils import instantiate
+from typing import Tuple
 
 
+
+class Corpus(Dataset):
+    def __init__(self, corpus_file: str, split=None, **kwargs):
+        super().__init__()
+
+        self.h5_path   = corpus_file
+        self.split     = split
+
+        with h5py.File(self.h5_path, "r") as h5:
+            self.keys = sorted(list(h5[split].keys()))
+
+        self._h5 = None
+
+    def _get_h5(self):
+        if self._h5 is None:
+            self._h5 = h5py.File(self.h5_path, "r")
+        return self._h5
+
+    def __len__(self):
+        return len(self.keys)
+
+    def __getitem__(self, idx: int) -> Tuple:
+        h5 = self._get_h5()
+        grp = h5[self.split][self.keys[idx]]
+
+        out = {}
+        # data
+        for k in grp.keys():
+            v = grp[k][()]
+            out[k] = torch.from_numpy(v, dtype=torch.float32)
+        # attrs
+        for name, val in grp.attrs.items():
+            out[name] = val
+
+        return out
 
 def create_corpus(cfg: DictConfig):
     # --- save dir ---
