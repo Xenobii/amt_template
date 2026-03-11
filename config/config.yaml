@@ -1,0 +1,41 @@
+model:
+  _target_: amt.model.AMTModel
+  n_bins: 256
+  chunk_len: 128
+  pad_len: 16
+  spec_type: mel
+  roll_types:
+    - frame
+  convert_to_log: true
+  device: cpu
+  verbose: false
+
+  default_sr: 44100
+  target_sr: 16000
+
+  hop_length: 256
+  bins_per_octave: 12
+  fmin: 18.5
+  n_fft: 2048
+  win_length: 2048
+  harmonics:
+    - 0.5
+    - 1
+    - 2
+    - 3
+
+  min_value: 1e-8
+  multiplier: 10.0
+
+  min_note: A0
+  max_note: C8
+  precise_onsets: true
+  precise_offsets: true
+  include_pedal: true
+
+dataset:
+  _target_: amt.datasets.MaestroDataset
+  root: dataset
+
+corpus:
+  corpus_file: corpus/corpus.h5
