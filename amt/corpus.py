@@ -8,6 +8,8 @@ from torch.utils.data import Dataset
 from hydra.utils import instantiate
 from typing import Tuple
 
+from amt.utils import print_h5_structure
+
 
 
 class Corpus(Dataset):
@@ -46,8 +48,10 @@ class Corpus(Dataset):
         return out
 
 def create_corpus(cfg: DictConfig):
-    # --- save dir ---
     f_out = cfg.corpus.corpus_file
+    attrs = cfg.corpus.attributes
+
+    # --- save dir ---
     out_dir = os.path.dirname(f_out)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
@@ -107,7 +111,9 @@ def create_corpus(cfg: DictConfig):
                 for k, v in output.items():
                     group.create_dataset(k, data=v[i].cpu().numpy(), compression="lzf")
                 
-                group.attrs["wav_file"] = wav_file
-                group.attrs["mid_file"] = mid_file
+                for attr in attrs:
+                    group.attrs[str(attr)] = files[str(attr)]
+
+        print_h5_structure(f_out)
 
     print(f"Finished processing. Dataset saved at {f_out}")

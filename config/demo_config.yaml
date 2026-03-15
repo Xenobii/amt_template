@@ -39,3 +39,7 @@ dataset:
 
 corpus:
   corpus_file: corpus/corpus.h5
+  attributes:
+    - midi_filename
+    - audio_filename
+    - canonical_composer

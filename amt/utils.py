@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import h5py
 
 
 def plot_spec(*args, k=0, cmap="magma", save_path=None):
@@ -61,3 +62,19 @@ def plot_spec(*args, k=0, cmap="magma", save_path=None):
         plt.close()
     else:
         plt.show()
+
+
+    
+def print_h5_structure(h5_path):
+    with h5py.File(h5_path, "r") as f:
+        def _print(name, obj):
+            depth = name.count("/")
+            indent = "  " * depth
+            if isinstance(obj, h5py.Group):
+                label = name or "/"
+                print(f"{indent}+ Group: {label}")
+            else:
+                print(f"{indent}- Dataset: {name.split('/')[-1]} shape={obj.shape} dtype={obj.dtype}")
+            for k, v in obj.attrs.items():
+                print(f"{indent}    @ {k}: {v}")
+        f.visititems(_print)
