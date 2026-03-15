@@ -47,6 +47,8 @@ class Corpus(Dataset):
 
         return out
 
+
+
 def create_corpus(cfg: DictConfig):
     f_out = cfg.corpus.corpus_file
     attrs = cfg.corpus.attributes

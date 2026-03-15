@@ -222,6 +222,20 @@ class AMTModel(nn.Module):
             print(f"{'include_pedal':15s}: {include_pedal}")
 
     def get_spectrogram(self, wav_file: str, spec_type: str = "cqt", convert_to_log: bool = True) -> torch.Tensor:
+        """
+        Load an audio file, compute the requested spectrogram, and optionally convert to dB.
+
+        Args:
+            wav_file: Path to the waveform file.
+            spec_type: One of 'mel','cqt','vqt','hcqt','hvqt'.
+            convert_to_log: If True, convert power to dB.
+
+        Returns:
+            Spectrogram tensor on model device.
+            Shapes:
+              - `mel/cqt/vqt`: (channels, n_bins, time)
+              - `hcqt/hvqt`: (n_harmonics, n_bins, time)
+        """
         # load audio
         wave, sr = torchaudio.load(wav_file)
         wave = wave.to(self.device)
@@ -259,21 +273,57 @@ class AMTModel(nn.Module):
         return spec
     
     def _power_to_db(self, x: torch.Tensor) -> torch.Tensor:
+        """Convert power spectrogram to dB scale.
+            Args: 
+                x: Power spectrogram tensor.
+            Returns: 
+                dB-scaled tensor of same shape as `x`.
+        """
         return self.multiplier * torch.log10(x.clamp(min=self.min_value))
     
     def _db_to_power(self, x: torch.Tensor) -> torch.Tensor:
+        """Convert dB spectrogram back to power.
+        Args:
+            x: dB spectrogram tensor.
+        Returns:
+            Power spectrogram tensor of same shape as `x`.
+        """
         return torch.pow(10.0, x / self.multiplier)
     
     def _get_mel(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute Mel spectrogram.
+        Args:
+            x: Waveform tensor (channels, samples).
+        Returns:
+            Mel spectrogram: (channels, n_mels, time)
+        """
         return self.mel(x)
     
     def _get_cqt(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute Constant-Q transform (CQT).
+        Args:
+            x: Waveform tensor (channels, samples).
+        Returns:
+            CQT spectrogram: (channels, n_bins, time)
+        """
         return self.cqt(x)
     
     def _get_vqt(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute Variable-Q transform (VQT).
+        Args:
+            x: Waveform tensor (channels, samples).
+        Returns:
+            VQT spectrogram: (channels, n_bins, time)
+        """
         return self.vqt(x)
     
     def _get_hcqt(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute harmonic CQT stack.
+        Args:
+            x: Waveform tensor (channels, samples).
+        Returns:
+            Tensor of stacked harmonic CQTs: (n_harmonics, n_bins, time)
+        """
         specs = []
         for cqt in self.hcqt:
             spec = cqt(x).squeeze(0)
@@ -281,6 +331,12 @@ class AMTModel(nn.Module):
         return torch.stack(specs, dim=0)
     
     def _get_hvqt(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute harmonic VQT stack.
+        Args:
+            x: Waveform tensor (channels, samples).
+        Returns:
+            Tensor of stacked harmonic VQTs: (n_harmonics, n_bins, time)
+        """
         specs = []
         for vqt in self.hvqt:
             spec = vqt(x).squeeze(0)
@@ -290,6 +346,13 @@ class AMTModel(nn.Module):
     # === Midi retrieval ===
 
     def get_piano_roll(self, midi_file: str, roll_types: Optional[List] = None) -> torch.Tensor:
+        """Load a MIDI file and return requested piano roll channels.
+        Args:
+            midi_file: Path to MIDI file.
+            roll_types: List of roll types to include (e.g. ['onset','frame','velocity']).
+        Returns:
+            Stacked roll tensor: (channels, n_pitches, time) where `channels` matches len(roll_types).
+        """
         # load midi
         midi = pretty_midi.PrettyMIDI(midi_file)
 
@@ -321,6 +384,12 @@ class AMTModel(nn.Module):
         return roll # (channels, n_pitches, time)
     
     def _get_pedal_intervals(self, instrument):
+        """Extract sustain pedal on/off time intervals for an instrument.
+        Args:
+            instrument: pretty_midi.Instrument instance.
+        Returns:
+            List of (start, end) times for pedal-on intervals.
+        """
         intervals = []
         pedal_on = False
         start = None
@@ -343,6 +412,13 @@ class AMTModel(nn.Module):
         return intervals
 
     def _get_onset_roll(self, midi: pretty_midi.PrettyMIDI, include_velocity: bool = True) -> torch.Tensor:
+        """Create an onset piano roll from MIDI.
+        Args:
+            midi: pretty_midi.PrettyMIDI instance.
+            include_velocity: If True, scale onsets by note velocity.
+        Returns:
+            Onset roll tensor: (n_pitches, time)
+        """
         if self.precise_onsets:
             end_time = midi.get_end_time()
             n_frames = int(np.ceil(end_time * self.fs)) + len(self.onset_window)
@@ -382,6 +458,13 @@ class AMTModel(nn.Module):
         return onset_roll # (n_pitches, time)
 
     def _get_offset_roll(self, midi: pretty_midi.PrettyMIDI, include_velocity: bool = True) -> torch.Tensor:
+        """Create an offset piano roll from MIDI.
+        Args:
+            midi: pretty_midi.PrettyMIDI instance.
+            include_velocity: If True, scale offsets by note velocity.
+        Returns:
+            Offset roll tensor: (n_pitches, time)
+        """
         if self.precise_offsets:
             end_time = midi.get_end_time()
             n_frames = int(np.ceil(end_time * self.fs)) + len(self.offset_window)
@@ -432,6 +515,12 @@ class AMTModel(nn.Module):
         return offset_roll # (n_pitches, time)
     
     def _get_frame_roll(self, midi: pretty_midi.PrettyMIDI) -> torch.Tensor:
+        """Return binary frame-level piano roll from MIDI.
+        Args:
+            midi: pretty_midi.PrettyMIDI instance.
+        Returns:
+            Binary frame roll tensor: (n_pitches, time)
+        """
         # get piano roll
         frame_roll = midi.get_piano_roll(fs=self.fs, pedal_threshold=self.pedal_threshold)
         frame_roll = torch.from_numpy(frame_roll>0).float().to(self.device)
@@ -442,6 +531,12 @@ class AMTModel(nn.Module):
         return frame_roll # (n_pitches, time)
     
     def _get_velocity_roll(self, midi: pretty_midi.PrettyMIDI) -> torch.Tensor:
+        """Return velocity-scaled piano roll from MIDI.
+        Args:
+            midi: pretty_midi.PrettyMIDI instance.
+        Returns:
+            Velocity roll tensor: (n_pitches, time) with values 0-127.
+        """
         # convert to piano roll
         velocity_roll = midi.get_piano_roll(fs=self.fs, pedal_threshold=self.pedal_threshold)
 
@@ -456,6 +551,14 @@ class AMTModel(nn.Module):
     # === Chunking ===
 
     def _match_input_times(self, spec: torch.Tensor, roll: torch.Tensor, pad_value: float = 0.0) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Pad spectrogram or piano roll so their time dimensions match.
+        Args:
+            spec: Spectrogram tensor (channels, n_bins, time).
+            roll: Piano roll tensor (channels, n_pitches, time).
+            pad_value: Value used to pad spectrogram when it's shorter.
+        Returns:
+            Tuple (spec, roll) with matched time dimension.
+        """
         # spec: (channels, n_bins, time)
         # roll: (channels, n_pitches, time)
             
@@ -474,6 +577,15 @@ class AMTModel(nn.Module):
         return spec, roll
 
     def _chunk_input(self, x: torch.Tensor, chunk_len: int, pad_len: int, pad_value: float) -> torch.Tensor:
+        """Split a time-series tensor into fixed-length chunks with optional padding.
+        Args:
+            x: Input tensor (channels, n_bins, n_frames).
+            chunk_len: Frames per chunk (without pad_len).
+            pad_len: Frames of padding on each side of a chunk.
+            pad_value: Value used for padding.
+        Returns:
+            Chunked tensor: (n_chunks, channels, n_bins, chunk_len + 2*pad_len)
+        """
         # x: (channels, n_bins, n_frames)
         channels, n_bins, n_frames = x.shape
         
@@ -497,18 +609,14 @@ class AMTModel(nn.Module):
     # === Preprocessing ===
     
     def process_input(self, wav_file: str, midi_file: Optional[str] = None) -> Dict:
-        """
-        Processes a wav or wav+midi file into appropriate tensors for model usage.
-        Uses the configuration of the AMTModel parameters
-
+        """Process audio (and optional MIDI) into chunked spectrograms and piano rolls.
         Args:
-            wav_file (str): the path to the wav input file
-            midi_file (Optional[str], optional): the path to the target midi. Defaults to None.
-
+            wav_file: Path to waveform file.
+            midi_file: Optional path to MIDI file. If provided, corresponding rolls are returned.
         Returns:
-            Dictionary containing the chunked spectrogram and any selected roll types
-            spectrogram: (n_chunks, channels, n_bins, chunk_len + 2*pad_len)
-            piano rolls: (n_chunks, n_bins, chunk_len + 2*pad_len)
+            Dictionary with key 'spec' and additional keys for each roll type when `midi_file` is given.
+            - `spec`: (n_chunks, channels, n_bins, chunk_len + 2*pad_len)
+            - roll entries: (n_chunks, n_pitches, chunk_len + 2*pad_len) or similar per roll type
         """
         with torch.no_grad():
             output = {}
@@ -539,17 +647,41 @@ class AMTModel(nn.Module):
     # === Forward methods ===
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Model forward for inference. To be implemented by subclasses.
+        Args:
+            x: Input tensor (shape depends on model architecture).
+        Returns:
+            Model output tensor.
+        """
         return NotImplementedError
     
     def forward_train(self, x: torch.Tensor) -> torch.Tensor:
+        """Model forward used during training. To be implemented by subclasses.
+        Args:
+            x: Input tensor (shape depends on model architecture).
+        Returns:
+            Training-time outputs (e.g., logits, losses, metrics).
+        """
         return NotImplementedError
 
     # === Inference methods ===
     
     def inference(self, wav_file: str):
+        """High-level inference API: run full-file inference and return predictions.
+        Args:
+            wav_file: Path to waveform file.
+        Returns:
+            Model-dependent inference result.
+        """
         return NotImplementedError
     
     def chunked_inference(self, wav_file: str):
+        """Run inference on chunked input to support long audio processing.
+        Args:
+            wav_file: Path to waveform file.
+        Returns:
+            Model-dependent chunked predictions.
+        """
         return NotImplementedError
         
     # === Utilities ===
@@ -557,3 +689,4 @@ class AMTModel(nn.Module):
     def print_num_params(self):
         total = sum(p.numel() for p in self.parameters())
         print(f"{'Total number of parameters':30s}: {total:,}")
+        """Print the total number of trainable parameters in the model."""

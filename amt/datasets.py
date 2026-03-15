@@ -28,3 +28,4 @@ class MaestroDataset(Dataset):
             "wav": self.wav_files[index],
             "mid": self.mid_files[index],
         }
+    
